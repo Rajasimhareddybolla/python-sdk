@@ -79,6 +79,7 @@ from mcp.server.elicitation import (
 )
 from mcp.server.mcpserver.context import Context
 from mcp.server.mcpserver.exceptions import InvalidSignature, ToolError
+from mcp.server.mcpserver.utilities.func_metadata import split_positional_arguments
 from mcp.server.request_state import compact_json
 from mcp.server.validation import validate_tool_use_result_messages, wants_sampling_tools
 from mcp.shared._callable_inspection import is_async_callable
@@ -550,10 +551,11 @@ async def _resolve(fn: Callable[..., Any], res: _Resolution) -> ElicitationResul
         raise _Pending
 
     result: Any
+    args, kwargs = split_positional_arguments(fn, kwargs)
     if plan.is_async:
-        result = await fn(**kwargs)
+        result = await fn(*args, **kwargs)
     else:
-        result = await anyio.to_thread.run_sync(lambda: fn(**kwargs))
+        result = await anyio.to_thread.run_sync(lambda: fn(*args, **kwargs))
 
     if _is_marker(result):
         outcome = await _fulfil(result, wire_key, res)

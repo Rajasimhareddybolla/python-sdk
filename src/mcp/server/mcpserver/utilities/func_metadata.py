@@ -62,6 +62,39 @@ def _returns_content(annotation: Any) -> bool:
     return False
 
 
+def split_positional_arguments(
+    fn: Callable[..., Any], kwargs: dict[str, Any]
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    """Split kwargs into positional-only arguments and remaining keyword arguments.
+
+    If the callable has positional-only parameters, extracts matching arguments from kwargs
+    in signature order so the function can be called positionally.
+    """
+    try:
+        sig = inspect.signature(fn)
+    except (ValueError, TypeError):
+        return (), kwargs
+
+    has_pos_only = any(p.kind == inspect.Parameter.POSITIONAL_ONLY for p in sig.parameters.values())
+    if not has_pos_only:
+        return (), kwargs
+
+    remaining_kwargs = dict(kwargs)
+    args: list[Any] = []
+    for param in sig.parameters.values():
+        if param.kind == inspect.Parameter.POSITIONAL_ONLY:
+            if param.name in remaining_kwargs:
+                args.append(remaining_kwargs.pop(param.name))
+            elif param.default is not inspect.Parameter.empty:
+                args.append(param.default)
+            else:
+                break
+        else:
+            break
+
+    return tuple(args), remaining_kwargs
+
+
 class UntitledJsonSchema(GenerateJsonSchema):
     """A JSON schema generator that leaves out the titles pydantic derives from field names.
 
@@ -171,9 +204,10 @@ class FuncMetadata(BaseModel):
         worker thread.
         """
         kwargs = arguments | (arguments_to_pass_directly or {})
+        args, kwargs = split_positional_arguments(fn, kwargs)
         if fn_is_async:
-            return await fn(**kwargs)
-        return await anyio.to_thread.run_sync(functools.partial(fn, **kwargs))
+            return await fn(*args, **kwargs)
+        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
 
     @deprecated(
         "FuncMetadata.call_fn_with_arg_validation() is deprecated and will be removed in 3.0; "

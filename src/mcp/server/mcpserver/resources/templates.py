@@ -12,9 +12,10 @@ from mcp_types import Annotations, Icon, InputRequiredResult
 from pydantic import BaseModel, Field, validate_call
 
 from mcp.server.mcpserver.exceptions import ResourceError, UnexpectedResourceError
-from mcp.server.mcpserver.resources.types import FunctionResource, Resource
+from mcp.server.mcpserver.resources.base import Resource
+from mcp.server.mcpserver.resources.types import FunctionResource
 from mcp.server.mcpserver.utilities.context_injection import find_context_parameter, inject_context
-from mcp.server.mcpserver.utilities.func_metadata import func_metadata
+from mcp.server.mcpserver.utilities.func_metadata import func_metadata, split_positional_arguments
 from mcp.shared._callable_inspection import is_async_callable
 from mcp.shared.exceptions import MCPError
 from mcp.shared.path_security import contains_path_traversal, is_absolute_path
@@ -223,10 +224,11 @@ class ResourceTemplate(BaseModel):
             params = inject_context(self.fn, params, context, self.context_kwarg)
 
             fn = self.fn
+            args, params = split_positional_arguments(fn, params)
             if is_async_callable(fn):
-                result = await fn(**params)
+                result = await fn(*args, **params)
             else:
-                result = await anyio.to_thread.run_sync(functools.partial(self.fn, **params))
+                result = await anyio.to_thread.run_sync(functools.partial(self.fn, *args, **params))
 
             if isinstance(result, InputRequiredResult):
                 return result
